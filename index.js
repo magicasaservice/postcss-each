@@ -1,29 +1,29 @@
-const postcss = require('postcss');
-const vars = require('postcss-simple-vars');
+const postcss = require("postcss");
+const vars = require("postcss-simple-vars");
 
-const PLUGIN_NAME = 'postcss-each';
+const PLUGIN_NAME = "postcss-each";
 const SEPARATOR = /\s+in\s+/;
 
 function checkParams(params) {
   if (!SEPARATOR.test(params)) return 'Missed "in" keyword in @each';
 
-  const [name, values] = params.split(SEPARATOR).map(str => str.trim());
+  const [name, values] = params.split(SEPARATOR).map((str) => str.trim());
 
-  if (!name.match(/\$[_a-zA-Z]?\w+/)) return 'Missed variable name in @each';
-  if (!values.match(/(\w+\,?\s?)+/)) return 'Missed values list in @each';
+  if (!name.match(/\$[_a-zA-Z]?\w+/)) return "Missed variable name in @each";
+  if (!values.match(/(\w+\,?\s?)+/)) return "Missed values list in @each";
 
   return null;
 }
 
 function tokenize(str) {
-  return postcss.list.comma(str).map(str => str.replace(/^\$/, ''));
+  return postcss.list.comma(str).map((str) => str.replace(/^\$/, ""));
 }
 
 function paramsList(params) {
   let [vars, values] = params.split(SEPARATOR).map(tokenize);
   let matched = false;
 
-  values = values.map(value => {
+  values = values.map((value) => {
     let match = value.match(/^\((.*)\)$/);
     if (match) matched = true;
     return match ? postcss.list.comma(match[1]) : value;
@@ -32,9 +32,9 @@ function paramsList(params) {
   values = matched ? values : [values];
 
   return {
-    names:     values.map((_, i) => vars[i]),
+    names: values.map((_, i) => vars[i]),
     indexName: vars[values.length],
-    values:    values,
+    values: values,
   };
 }
 
@@ -48,7 +48,7 @@ function processRules(rule, params) {
 
     if (params.indexName) vals[params.indexName] = i;
 
-    rule.nodes.forEach(node => {
+    rule.nodes.forEach((node) => {
       const proxy = postcss.rule({ nodes: [node] });
       const { root } = postcss([vars({ only: vals })]).process(proxy);
       rule.parent.insertBefore(rule, root.nodes[0].nodes[0]);
@@ -57,8 +57,8 @@ function processRules(rule, params) {
 }
 
 function processEach(rule) {
-  const params  = ` ${rule.params} `;
-  const error   = checkParams(params);
+  const params = ` ${rule.params} `;
+  const error = checkParams(params);
   if (error) throw rule.error(error);
 
   const parsedParams = paramsList(params);
@@ -68,40 +68,57 @@ function processEach(rule) {
 
 function rulesExists(css) {
   let rulesLength = 0;
-  css.walkAtRules('each', () => rulesLength++);
+  css.walkAtRules("each", () => rulesLength++);
   return rulesLength;
 }
 
-function processLoop(css, afterEach, beforeEach) {
-  if (afterEach) {
-    css = postcss(afterEach).process(css).root;
+async function processLoop(css, afterEach, beforeEach) {
+  if (beforeEach) {
+    css = await postcss(beforeEach)
+      .process(css, { from: undefined })
+      .then((result) => {
+        return result.root;
+      })
+      .catch((error) => {
+        console.error(error);
+      });
   }
 
-  css.walkAtRules('each', (rule) => {
+  css.walkAtRules("each", async (rule) => {
     processEach(rule);
-    processLoop(rule.root());
+    await processLoop(rule.root());
   });
 
-  if (beforeEach) {
-    css = postcss(beforeEach).process(css).root;
+  if (afterEach) {
+    css = await postcss(afterEach)
+      .process(css, { from: undefined })
+      .then((result) => {
+        return result.root;
+      })
+      .catch((error) => {
+        console.error(error);
+      });
   }
 
-  if (rulesExists(css)) processLoop(css, afterEach, beforeEach);
-};
+  if (rulesExists(css)) await processLoop(css, afterEach, beforeEach);
+}
 
 const pluginCreator = (opts = {}) => {
   const hasPlugins = opts && opts.plugins;
-  const hasAfterEach = hasPlugins && opts.plugins.afterEach && opts.plugins.afterEach.length;
-  const hasBeforeEach = hasPlugins && opts.plugins.beforeEach && opts.plugins.beforeEach.length;
+  const hasAfterEach =
+    hasPlugins && opts.plugins.afterEach && opts.plugins.afterEach.length;
+  const hasBeforeEach =
+    hasPlugins && opts.plugins.beforeEach && opts.plugins.beforeEach.length;
 
   if (hasAfterEach || hasBeforeEach) {
     return {
       postcssPlugin: PLUGIN_NAME,
-      Once: (css) => processLoop(
-        css,
-        hasAfterEach && opts.plugins.afterEach,
-        hasBeforeEach && opts.plugins.beforeEach
-      ),
+      Once: async (css) =>
+        await processLoop(
+          css,
+          hasAfterEach && opts.plugins.afterEach,
+          hasBeforeEach && opts.plugins.beforeEach
+        ),
     };
   } else {
     return {
