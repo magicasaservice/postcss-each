@@ -1,6 +1,0 @@
-{
-  "preset": "airbnb",
-  "disallowMultipleVarDecl": "exceptUndefined",
-  "disallowQuotedKeysInObjects": "allButReserved",
-  "disallowArrayDestructuringReturn": false
-}
